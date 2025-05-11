@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Twitch Todo Widget</title>
+  <style>
+    :root {
+      --background-color: rgba(23, 25, 35, 0.8);
+      --text-color: #ffffff;
+      --accent-color: #9147ff;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    }
+
+    .todo-widget {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: all 0.3s ease;
+      opacity: 0.95;
+      backdrop-filter: blur(5px);
+      background-color: var(--background-color);
+      color: var(--text-color);
+    }
+
+    .todo-widget:hover {
+      opacity: 1;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    }
+
+    .todo-widget-header {
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+    }
+
+    .todo-widget-header h2 {
+      margin: 0;
+      font-weight: 600;
+      font-size: 1.25rem;
+      letter-spacing: -0.01em;
+    }
+
+    .notification {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      animation: fadeInOut 3s ease forwards;
+      z-index: 10;
+    }
+
+    .notification.success {
+      background-color: rgba(16, 185, 129, 0.9);
+      color: white;
+    }
+
+    .notification.error {
+      background-color: rgba(239, 68, 68, 0.9);
+      color: white;
+    }
+
+    .todo-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .todo-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      transition: background-color 0.2s ease, transform 0.3s ease;
+      animation: slideIn 0.3s ease forwards;
+      gap: 10px;
+    }
+
+    .todo-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .todo-item.completed .todo-text {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+
+    .todo-number {
+      flex-shrink: 0;
+      font-weight: 600;
+      width: 24px;
+    }
+
+    .todo-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .todo-text {
+      flex-grow: 1;
+      margin-left: 8px;
+      word-break: break-word;
+      font-size: 0.95rem;
+      transition: opacity 0.2s ease;
+    }
+
+    .empty-state {
+      padding: 24px 16px;
+      text-align: center;
+      font-style: italic;
+      opacity: 0.6;
+    }
+
+    .todo-commands {
+      padding: 12px 16px;
+      font-size: 0.75rem;
+      opacity: 0.7;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .todo-commands p {
+      margin: 0;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInOut {
+      0% {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      10% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      80% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    /* Scrollbar Styling */
+    .todo-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .todo-list::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    .todo-list::-webkit-scrollbar-thumb {
+      background-color: rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+    }
+
+    /* SVG Icons */
+    .icon-check {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+    }
+
+    .icon-circle {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--text-color);
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // StreamElements specific widget initialization
+    // This will be triggered when the widget loads 
+    window.addEventListener('onWidgetLoad', function (obj) {
+      const fieldData = obj.detail.fieldData;
+      
+      // Get the channel name and default options from widget settings
+      const channelName = fieldData.channel || 'seailo';
+      const backgroundColor = fieldData.backgroundColor || 'rgba(23, 25, 35, 0.8)';
+      const textColor = fieldData.textColor || '#ffffff';
+      const accentColor = fieldData.accentColor || '#9147ff';
+      const moderatorsList = fieldData.moderators || '';
+      
+      // Parse moderator list from comma-separated string
+      const moderators = moderatorsList
+        .split(',')
+        .map(mod => mod.trim())
+        .filter(mod => mod.length > 0);
+      
+      // Set CSS variables from settings
+      document.documentElement.style.setProperty('--background-color', backgroundColor);
+      document.documentElement.style.setProperty('--text-color', textColor);
+      document.documentElement.style.setProperty('--accent-color', accentColor);
+      
+      // Initialize the widget
+      initTodoWidget(channelName, moderators);
+    });
+
+    // For local testing without StreamElements
+    if (!window.location.host.includes('streamelements.com')) {
+      // Set default values for local testing
+      const channelName = 'seailo';
+      const moderators = [];
+      
+      // Initialize with test values
+      initTodoWidget(channelName, moderators);
+    }
+
+    function initTodoWidget(channelName, moderators) {
+      // State management
+      let todos = JSON.parse(localStorage.getItem('twitch-todos') || '[]');
+      let widgetVisible = true;
+      let notification = null;
+      
+      // Dom elements
+      const app = document.getElementById('app');
+      
+      // Render the widget initially
+      renderWidget();
+      
+      // Setup websocket connection to Twitch chat
+      setupTwitchChat();
+      
+      function renderWidget() {
+        if (!widgetVisible) {
+          app.innerHTML = '';
+          return;
+        }
+        
+        let notificationHtml = '';
+        if (notification) {
+          notificationHtml = `
+            <div class="notification ${notification.type}">
+              ${notification.message}
+            </div>
+          `;
+        }
+        
+        let todosHtml = '';
+        if (todos.length === 0) {
+          todosHtml = `
+            <li class="empty-state">
+              No todos yet. Add with !todo add [task]
+            </li>
+          `;
+        } else {
+          todosHtml = todos.map((todo, index) => {
+            const statusIcon = todo.completed 
+              ? `<svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="${getComputedStyle(document.documentElement).getPropertyValue('--accent-color')}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>`
+              : `<div class="icon-circle"></div>`;
+            
+            return `
+              <li class="todo-item ${todo.completed ? 'completed' : ''}" style="animation-delay: ${index * 0.05}s">
+                <span class="todo-number">${index + 1}.</span>
+                <span class="todo-status">${statusIcon}</span>
+                <span class="todo-text">${escapeHtml(todo.text)}</span>
+              </li>
+            `;
+          }).join('');
+        }
+        
+        app.innerHTML = `
+          <div class="todo-widget">
+            <div class="todo-widget-header">
+              <h2>Stream Tasks</h2>
+              ${notificationHtml}
+            </div>
+            
+            <ul class="todo-list">
+              ${todosHtml}
+            </ul>
+            
+            <div class="todo-commands">
+              <p>Commands: !todo add [task] | !todo done [#] | !todo del [#] | !todo clear</p>
+            </div>
+          </div>
+        `;
+      }
+      
+      function setupTwitchChat() {
+        try {
+          const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+          
+          ws.onopen = () => {
+            // Anonymous connection to Twitch chat
+            ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
+            ws.send(`NICK justinfan${Math.floor(Math.random() * 100000)}`);
+            ws.send(`JOIN #${channelName.toLowerCase()}`);
+            console.log(`Connected to Twitch chat for channel: ${channelName}`);
+          };
+          
+          ws.onmessage = (event) => {
+            const message = event.data;
+            if (message.includes('PING')) {
+              ws.send('PONG :tmi.twitch.tv');
+              return;
+            }
+            
+            // Handle actual chat messages
+            if (message.includes('PRIVMSG')) {
+              const parsedMessage = parseTwitchMessage(message);
+              if (parsedMessage) {
+                handleCommand(parsedMessage);
+              }
+            }
+          };
+          
+          ws.onclose = () => {
+            console.log('Disconnected from Twitch chat. Reconnecting in 5 seconds...');
+            setTimeout(setupTwitchChat, 5000);
+          };
+          
+          ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            
+            // Try to fallback to StreamElements event listener
+            setupStreamElementsListener();
+          };
+        } catch (error) {
+          console.error('Error connecting to Twitch chat:', error);
+          
+          // Fallback to StreamElements event listener
+          setupStreamElementsListener();
+        }
+      }
+      
+      function setupStreamElementsListener() {
+        // StreamElements specific event listener
+        window.addEventListener('onEventReceived', function (obj) {
+          const data = obj.detail.event.data;
+          if (data.text && data.text.startsWith('!todo')) {
+            const username = data.displayName || data.nick;
+            const message = data.text;
+            const isMod = data.tags && data.tags.mod === '1';
+            const isBroadcaster = username.toLowerCase() === channelName.toLowerCase();
+            
+            handleCommand({
+              username,
+              message,
+              isMod,
+              isBroadcaster
+            });
+          }
+        });
+      }
+      
+      function parseTwitchMessage(message) {
+        try {
+          // Extract username and message from the IRC message
+          const userMatch = message.match(/@(.+?(?=\s:)).*PRIVMSG #\w+ :(.*)/);
+          if (!userMatch) return null;
+          
+          const tagsString = userMatch[1];
+          const messageText = userMatch[2];
+          
+          // Extract username from tags
+          const displayNameMatch = tagsString.match(/display-name=([^;]+)/);
+          const username = displayNameMatch ? displayNameMatch[1] : 'Anonymous';
+          
+          // Check if user is mod or broadcaster
+          const modMatch = tagsString.match(/mod=([^;]+)/);
+          const isMod = modMatch ? modMatch[1] === '1' : false;
+          
+          // Check if broadcaster (channel owner)
+          const isBroadcaster = username.toLowerCase() === channelName.toLowerCase();
+          
+          return {
+            username,
+            message: messageText,
+            isMod,
+            isBroadcaster
+          };
+        } catch (error) {
+          console.error('Error parsing Twitch message:', error);
+          return null;
+        }
+      }
+      
+      function handleCommand(chatMessage) {
+        const { username, message, isMod, isBroadcaster } = chatMessage;
+        
+        // Check if message is a command
+        if (!message.startsWith('!todo')) return;
+        
+        // Check if user is authorized (broadcaster or mod)
+        const isAuthorized = isBroadcaster || isMod || moderators.includes(username.toLowerCase());
+        if (!isAuthorized) return;
+        
+        const parts = message.split(' ');
+        if (parts.length < 2) return;
+        
+        const subCommand = parts[1].toLowerCase();
+        const remainingText = parts.slice(2).join(' ');
+        
+        switch (subCommand) {
+          case 'add':
+            if (remainingText) {
+              addTodo(remainingText, username);
+            }
+            break;
+            
+          case 'delete':
+          case 'del':
+          case 'remove':
+          case 'rm':
+            if (remainingText) {
+              deleteTodo(remainingText, username);
+            }
+            break;
+            
+          case 'done':
+          case 'complete':
+          case 'check':
+          case 'toggle':
+            if (remainingText) {
+              toggleTodo(remainingText, username);
+            }
+            break;
+            
+          case 'clear':
+          case 'reset':
+            clearTodos(username);
+            break;
+            
+          case 'hide':
+          case 'show':
+          case 'toggle-widget':
+            toggleWidget(username);
+            break;
+            
+          default:
+            break;
+        }
+      }
+      
+      function addTodo(text, user) {
+        todos.push({
+          id: Date.now().toString(),
+          text,
+          completed: false,
+          createdAt: Date.now()
+        });
+        
+        saveTodos();
+        showNotification(`Added: "${text}"`, 'success');
+      }
+      
+      function deleteTodo(indexOrText, user) {
+        const index = parseInt(indexOrText);
+        if (!isNaN(index) && index > 0 && index <= todos.length) {
+          const todoText = todos[index - 1].text;
+          todos.splice(index - 1, 1);
+          saveTodos();
+          showNotification(`Deleted #${index}: "${todoText}"`, 'success');
+        } else {
+          // Try to delete by text match
+          const todoIndex = todos.findIndex(todo => 
+            todo.text.toLowerCase().includes(indexOrText.toLowerCase())
+          );
+          
+          if (todoIndex !== -1) {
+            const todoText = todos[todoIndex].text;
+            todos.splice(todoIndex, 1);
+            saveTodos();
+            showNotification(`Deleted: "${todoText}"`, 'success');
+          } else {
+            showNotification(`Todo not found`, 'error');
+          }
+        }
+      }
+      
+      function toggleTodo(indexOrText, user) {
+        const index = parseInt(indexOrText);
+        if (!isNaN(index) && index > 0 && index <= todos.length) {
+          todos[index - 1].completed = !todos[index - 1].completed;
+          const status = todos[index - 1].completed ? 'completed' : 'reopened';
+          saveTodos();
+          showNotification(`Todo #${index} ${status}`, 'success');
+        } else {
+          // Try to toggle by text match
+          const todoIndex = todos.findIndex(todo => 
+            todo.text.toLowerCase().includes(indexOrText.toLowerCase())
+          );
+          
+          if (todoIndex !== -1) {
+            todos[todoIndex].completed = !todos[todoIndex].completed;
+            const status = todos[todoIndex].completed ? 'completed' : 'reopened';
+            saveTodos();
+            showNotification(`Todo "${todos[todoIndex].text}" ${status}`, 'success');
+          } else {
+            showNotification(`Todo not found`, 'error');
+          }
+        }
+      }
+      
+      function clearTodos(user) {
+        todos = [];
+        saveTodos();
+        showNotification('All todos cleared', 'success');
+      }
+      
+      function toggleWidget(user) {
+        widgetVisible = !widgetVisible;
+        showNotification(widgetVisible ? 'Widget visible' : 'Widget hidden', 'success');
+        renderWidget();
+      }
+      
+      function saveTodos() {
+        localStorage.setItem('twitch-todos', JSON.stringify(todos));
+        renderWidget();
+      }
+      
+      function showNotification(message, type) {
+        notification = { message, type };
+        renderWidget();
+        
+        setTimeout(() => {
+          notification = null;
+          renderWidget();
+        }, 3000);
+      }
+      
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    }
+  </script>
+</body>
+</html>
