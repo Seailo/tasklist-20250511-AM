@@ -200,7 +200,6 @@
 
   <script>
     // StreamElements specific widget initialization
-    // This will be triggered when the widget loads 
     window.addEventListener('onWidgetLoad', function (obj) {
       const fieldData = obj.detail.fieldData;
       
@@ -241,6 +240,8 @@
       let todos = JSON.parse(localStorage.getItem('twitch-todos') || '[]');
       let widgetVisible = true;
       let notification = null;
+      let reconnectTimeout = null;
+      let wsConnection = null;
       
       // Dom elements
       const app = document.getElementById('app');
@@ -312,47 +313,74 @@
       
       function setupTwitchChat() {
         try {
+          // Clear any existing connection
+          if (wsConnection) {
+            wsConnection.close();
+            wsConnection = null;
+          }
+
+          // Clear any existing timeout
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+
           const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+          wsConnection = ws;
           
           ws.onopen = () => {
-            // Anonymous connection to Twitch chat
-            ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
-            ws.send(`NICK justinfan${Math.floor(Math.random() * 100000)}`);
-            ws.send(`JOIN #${channelName.toLowerCase()}`);
-            console.log(`Connected to Twitch chat for channel: ${channelName}`);
+            try {
+              // Only send messages if the connection is open
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
+                ws.send(`NICK justinfan${Math.floor(Math.random() * 100000)}`);
+                ws.send(`JOIN #${channelName.toLowerCase()}`);
+                console.log(`Connected to Twitch chat for channel: ${channelName}`);
+              }
+            } catch (error) {
+              console.error('Error during WebSocket initialization:', error);
+              setupStreamElementsListener();
+            }
           };
           
           ws.onmessage = (event) => {
-            const message = event.data;
-            if (message.includes('PING')) {
-              ws.send('PONG :tmi.twitch.tv');
-              return;
-            }
-            
-            // Handle actual chat messages
-            if (message.includes('PRIVMSG')) {
-              const parsedMessage = parseTwitchMessage(message);
-              if (parsedMessage) {
-                handleCommand(parsedMessage);
+            try {
+              const message = event.data;
+              if (message.includes('PING')) {
+                ws.send('PONG :tmi.twitch.tv');
+                return;
               }
+              
+              // Handle actual chat messages
+              if (message.includes('PRIVMSG')) {
+                const parsedMessage = parseTwitchMessage(message);
+                if (parsedMessage) {
+                  handleCommand(parsedMessage);
+                }
+              }
+            } catch (error) {
+              console.error('Error handling WebSocket message:', error);
             }
           };
           
-          ws.onclose = () => {
-            console.log('Disconnected from Twitch chat. Reconnecting in 5 seconds...');
-            setTimeout(setupTwitchChat, 5000);
+          ws.onclose = (event) => {
+            console.log(`WebSocket closed with code ${event.code}. Reconnecting in 5 seconds...`);
+            wsConnection = null;
+            // Set new reconnection timeout
+            reconnectTimeout = setTimeout(setupTwitchChat, 5000);
           };
           
           ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            
-            // Try to fallback to StreamElements event listener
+            console.error('WebSocket connection error:', error);
+            // Close the connection on error to trigger reconnect
+            if (wsConnection) {
+              wsConnection.close();
+              wsConnection = null;
+            }
             setupStreamElementsListener();
           };
         } catch (error) {
-          console.error('Error connecting to Twitch chat:', error);
-          
-          // Fallback to StreamElements event listener
+          console.error('Error establishing WebSocket connection:', error);
           setupStreamElementsListener();
         }
       }
